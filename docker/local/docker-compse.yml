@@ -1,0 +1,163 @@
+services:
+  mysql:
+    env_file:
+      - .env
+    container_name: ${MYSQL_CONTAINER_NAME}
+    hostname: ${MYSQL_HOSTNAME}
+    platform: linux/x86_64
+    build:
+      context: ./mysql
+      args:
+        - MYSQL_BASE_IMAGE=${MYSQL_BASE_IMAGE}
+      labels:
+        custom.project: ${PROJECT_NAME}
+        custom.data: database
+    command: --default-authentication-plugin=mysql_native_password
+    image: ${MYSQL_IMAGE_NAME}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    networks:
+      - localnetwork
+    ports:
+      - ${MYSQL_PORT}:3306
+    volumes:
+      - db-volume:${MYSQL_DATA_PATH}:rw
+    logging:
+      driver: "json-file"
+      options:
+        max-file: ${DOCKER_LOG_FILES}
+        max-size: ${DOCKER_LOG_SIZES}
+    labels:
+      custom.project: ${PROJECT_NAME}
+      custom.data: database
+    restart: 'no'
+
+  mysql-testing:
+    env_file:
+      - .env
+    container_name: ${MYSQL_TESTING_CONTAINER_NAME}
+    hostname: ${MYSQL_TESTING_HOSTNAME}
+    platform: linux/x86_64
+    build:
+      context: ./mysql
+      args:
+        - MYSQL_BASE_IMAGE=${MYSQL_BASE_IMAGE}
+      labels:
+        custom.project: ${PROJECT_NAME}
+        custom.data: database
+    command: --default-authentication-plugin=mysql_native_password
+    image: ${MYSQL_TESTING_IMAGE_NAME}
+    networks:
+      - localnetwork
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_TESTING_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_TESTING_DATABASE}
+      MYSQL_USER: ${MYSQL_TESTING_USER}
+      MYSQL_PASSWORD: ${MYSQL_TESTING_PASSWORD}
+    volumes:
+      - db-test-volume:${MYSQL_TESTING_DATA_PATH}:rw
+    logging:
+      driver: "json-file"
+      options:
+        max-file: ${DOCKER_LOG_FILES}
+        max-size: ${DOCKER_LOG_SIZES}
+    labels:
+      custom.project: ${PROJECT_NAME}
+      custom.data: database-testing
+    restart: 'no'
+
+  php-fpm:
+    depends_on:
+      - mysql
+      - mysql-testing
+    env_file:
+      - .env
+    container_name: ${PHP_CONTAINER_NAME}
+    hostname: ${PHP_HOSTNAME}
+    build:
+      context: ./../../
+      dockerfile: ${PHP_DOCKERFILE}
+      args:
+        - PHP_BASE_IMAGE=${PHP_IMAGE_BASE}
+        - PHP_DEBUG=${PHP_DEBUG}
+        - PHP_COMPOSER_VERSION=${PHP_COMPOSER_VERSION}
+      labels:
+        custom.project: ${PROJECT_NAME}
+        custom.data: code
+    image: ${PHP_IMAGE_NAME}
+    networks:
+      - localnetwork
+    environment:
+      PHP_IDE_CONFIG: "serverName=Docker"
+    volumes:
+      - ../../:${PHP_DATA_PATH}:rw
+    logging:
+      driver: "json-file"
+      options:
+        max-file: ${DOCKER_LOG_FILES}
+        max-size: ${DOCKER_LOG_SIZES}
+    labels:
+      custom.project: ${PROJECT_NAME}
+      custom.data: code
+    restart: 'no'
+
+  nginx:
+    depends_on:
+      - php-fpm
+    env_file:
+      - .env
+    container_name: ${NGINX_CONTAINER_NAME}
+    hostname: ${NGINX_HOSTNAME}
+    build:
+      context: ./nginx
+      args:
+        - NGINX_BASE_IMAGE=${NGINX_IMAGE_BASE}
+      labels:
+        custom.project: ${PROJECT_NAME}
+        custom.data: webservice
+    image: ${NGINX_IMAGE_NAME}
+    networks:
+      - localnetwork
+    ports:
+      - ${NGINX_HOST_HTTP_PORT}:80
+      - ${NGINX_HOST_HTTPS_PORT}:443
+    volumes:
+      - ../..:${NGINX_DATA_PATH}:rw
+    logging:
+      driver: "json-file"
+      options:
+        max-file: ${DOCKER_LOG_FILES}
+        max-size: ${DOCKER_LOG_SIZES}
+    labels:
+      custom.project: ${PROJECT_NAME}
+      custom.data: webservice
+    restart: 'no'
+
+volumes:
+  db-volume:
+    name: ${MYSQL_VOLUMEN_NAME}
+    labels:
+      custom.project: ${PROJECT_NAME}
+      custom.data: database
+
+  db-test-volume:
+    name: ${MYSQL_TESTING_VOLUMEN_NAME}
+    labels:
+      custom.project: ${PROJECT_NAME}
+      custom.data: database
+
+networks:
+  localnetwork:
+    name: ${PROJECT_NAME}_${DOCKER_NETWORK_NAME}
+    driver: bridge
+    labels:
+      - "name=${DOCKER_NETWORK_NAME}"
+    driver_opts:
+      com.docker.network.enable_ipv6: "false"
+    ipam:
+      driver: default
+      config:
+        - subnet: "${DOCKER_NETWORK_CIDR}"
